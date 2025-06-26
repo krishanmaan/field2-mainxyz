@@ -1,6 +1,7 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import { fetchAllUsersWithFirestoreFields, auth, signInWithGoogle } from "../lib/firebase";
+import { useRouter } from 'next/navigation';
 
 interface Field {
   id: string;
@@ -8,6 +9,15 @@ interface Field {
   area: number;
   perimeter: number;
   userId: string;
+  color: string;
+  strokeColor: string;
+  strokeWeight: number;
+  fillOpacity: number;
+  createdAt: any;
+  updatedAt: any;
+  points: Array<{lat: number; lng: number}>;
+  mainImageIndex?: number;
+  fieldImages?: string[];
   [key: string]: any;
 }
 
@@ -25,7 +35,31 @@ function getInitials(name: string | undefined) {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
+// Format date
+function formatDate(timestamp: any): string {
+  if (!timestamp) return "N/A";
+  
+  try {
+    let date;
+    if (typeof timestamp === 'string') {
+      date = new Date(timestamp);
+    } else if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+      // Handle Firestore Timestamp
+      date = timestamp.toDate();
+    } else {
+      // Handle seconds/nanoseconds format
+      date = new Date(timestamp.seconds * 1000 + (timestamp.nanoseconds || 0) / 1000000);
+    }
+    
+    return date.toLocaleString();
+  } catch (error) {
+    console.error("Error formatting date:", error);
+    return "Invalid date";
+  }
+}
+
 const AdminPage = () => {
+  const router = useRouter();
   const [users, setUsers] = useState<UserFields[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -102,6 +136,12 @@ const AdminPage = () => {
     } else {
       setExpandedUser(uid);
     }
+  };
+
+  // Add function to open field on map
+  const openFieldMap = (fieldId: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent toggling the expandedUser
+    router.push(`/admin/field-map?id=${fieldId}`);
   };
 
   // Show login screen if not authenticated
@@ -336,19 +376,136 @@ const AdminPage = () => {
                     {expandedUser === user.uid && user.fields && Object.keys(user.fields).length > 0 && (
                       <div className="px-4 py-4 sm:px-6 border-t border-blue-100 bg-blue-50">
                         <h4 className="text-sm font-medium text-blue-700 mb-3">Field Details</h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        <div className="grid grid-cols-1 gap-4">
                           {Object.values(user.fields).map((field: Field) => (
-                            <div key={field.id} className="border border-blue-200 rounded-md p-3 bg-white shadow-sm">
-                              <div className="font-medium text-sm text-blue-900">{field.name}</div>
-                              <div className="text-xs text-blue-400 mb-2">ID: {field.id.substring(0, 8)}...</div>
-                              <div className="flex gap-3 text-xs">
-                                <span className="px-2 py-1 rounded-md bg-blue-100 text-blue-800">
-                                  Area: {field.area?.toFixed(2)}
-                                </span>
-                                <span className="px-2 py-1 rounded-md bg-blue-100 text-blue-800">
-                                  Perimeter: {field.perimeter?.toFixed(2)}
-                                </span>
+                            <div key={field.id} className="border border-blue-200 rounded-md p-4 bg-white shadow-sm">
+                              <div className="mb-3 flex justify-between items-start">
+                                <div>
+                                  <h5 className="font-bold text-base text-blue-900 mb-1">{field.name || "(Unnamed Field)"}</h5>
+                                  <p className="text-xs text-blue-400">ID: {field.id}</p>
+                                </div>
+                                <button
+                                  onClick={(e) => openFieldMap(field.id, e)}
+                                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-md flex items-center"
+                                >
+                                  <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                                  </svg>
+                                  View on Map
+                                </button>
                               </div>
+                              
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Left column - Basic info */}
+                                <div>
+                                  <dl className="grid grid-cols-3 gap-1 text-sm">
+                                    <dt className="col-span-1 text-gray-500">Area:</dt>
+                                    <dd className="col-span-2 font-medium text-blue-800">{field.area?.toFixed(5) || "N/A"}</dd>
+                                    
+                                    <dt className="col-span-1 text-gray-500">Perimeter:</dt>
+                                    <dd className="col-span-2 font-medium text-blue-800">{field.perimeter?.toFixed(5) || "N/A"}</dd>
+                                    
+                                    <dt className="col-span-1 text-gray-500">Color:</dt>
+                                    <dd className="col-span-2">
+                                      <div className="flex items-center">
+                                        <div 
+                                          className="w-4 h-4 mr-2 rounded-full border border-gray-300" 
+                                          style={{backgroundColor: field.color || '#FFFFFF'}}
+                                        ></div>
+                                        <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">{field.color || "N/A"}</code>
+                                      </div>
+                                    </dd>
+                                    
+                                    <dt className="col-span-1 text-gray-500">Stroke:</dt>
+                                    <dd className="col-span-2">
+                                      <div className="flex items-center">
+                                        <div 
+                                          className="w-4 h-4 mr-2 rounded-full border border-gray-300" 
+                                          style={{backgroundColor: field.strokeColor || '#FFFFFF'}}
+                                        ></div>
+                                        <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">{field.strokeColor || "N/A"}</code>
+                                      </div>
+                                    </dd>
+                                    
+                                    <dt className="col-span-1 text-gray-500">Stroke Weight:</dt>
+                                    <dd className="col-span-2 font-medium text-blue-800">{field.strokeWeight || "N/A"}</dd>
+                                    
+                                    <dt className="col-span-1 text-gray-500">Fill Opacity:</dt>
+                                    <dd className="col-span-2 font-medium text-blue-800">{field.fillOpacity || "N/A"}</dd>
+                                    
+                                    <dt className="col-span-1 text-gray-500">Created:</dt>
+                                    <dd className="col-span-2 text-xs text-blue-800">{formatDate(field.createdAt)}</dd>
+                                    
+                                    <dt className="col-span-1 text-gray-500">Updated:</dt>
+                                    <dd className="col-span-2 text-xs text-blue-800">{formatDate(field.updatedAt)}</dd>
+                                  </dl>
+                                </div>
+                                
+                                {/* Right column - Points data */}
+                                <div>
+                                  <h6 className="text-sm font-semibold mb-2 text-blue-900">Coordinates</h6>
+                                  {field.points && field.points.length > 0 ? (
+                                    <div className="bg-gray-50 p-2 rounded-md border border-gray-200 max-h-48 overflow-y-auto">
+                                      <table className="text-xs w-full">
+                                        <thead>
+                                          <tr className="border-b border-gray-200">
+                                            <th className="py-1 text-left font-medium text-gray-500">Point</th>
+                                            <th className="py-1 text-left font-medium text-gray-500">Latitude</th>
+                                            <th className="py-1 text-left font-medium text-gray-500">Longitude</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {field.points.map((point, idx) => (
+                                            <tr key={idx} className="border-b border-gray-100">
+                                              <td className="py-1 font-medium">{idx}</td>
+                                              <td className="py-1 font-mono">{point.lat.toFixed(8)}</td>
+                                              <td className="py-1 font-mono">{point.lng.toFixed(8)}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  ) : (
+                                    <div className="text-sm text-gray-500 italic">No coordinates data</div>
+                                  )}
+                                  
+                                  {field.userId && (
+                                    <div className="mt-2 text-xs text-gray-500">
+                                      <span className="font-medium">User ID: </span>
+                                      <code className="bg-gray-100 px-1 py-0.5 rounded">{field.userId}</code>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                              
+                              {/* Images section */}
+                              {field.fieldImages && field.fieldImages.length > 0 && (
+                                <div className="mt-3 pt-3 border-t border-gray-100">
+                                  <h6 className="text-sm font-semibold mb-2 text-blue-900">Field Images</h6>
+                                  <div className="flex flex-wrap gap-2">
+                                    {field.fieldImages.map((image, idx) => (
+                                      <div 
+                                        key={idx} 
+                                        className={`w-16 h-16 bg-gray-100 rounded-md border ${idx === field.mainImageIndex ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'}`}
+                                      >
+                                        {image && (
+                                          <img 
+                                            src={image} 
+                                            alt={`Field ${idx}`} 
+                                            className="w-full h-full object-cover rounded-md"
+                                            onError={(e) => {
+                                              (e.target as HTMLImageElement).src = 'https://via.placeholder.com/64?text=Error';
+                                            }}
+                                          />
+                                        )}
+                                        {idx === field.mainImageIndex && (
+                                          <div className="text-xs text-center mt-1 bg-blue-100 rounded text-blue-800">Main</div>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>

@@ -15,7 +15,8 @@ import {
   addDoc,
   FirestoreError,
   DocumentData,
-  updateDoc
+  updateDoc,
+  collectionGroup
 } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { Field } from '../components/map/types';
@@ -691,6 +692,112 @@ export const fetchAllUsersWithFields = async () => {
   if (snapshot.exists()) {
     return snapshot.val();
   } else {
+    return {};
+  }
+};
+
+/**
+ * Fetch all fields directly from Firestore
+ * @returns {Promise<FieldData[]>} Array of all fields
+ */
+export const fetchAllFields = async (): Promise<FieldData[]> => {
+  try {
+    // Check if user is authenticated
+    if (!auth.currentUser) {
+      console.error('User not authenticated');
+      return [];
+    }
+
+    const fieldsCollection = collection(db, 'fields');
+    const querySnapshot = await getDocs(fieldsCollection);
+    
+    const fields: FieldData[] = [];
+    querySnapshot.forEach((doc) => {
+      const fieldData = doc.data() as FieldData;
+      // Ensure ID is set
+      if (!fieldData.id && doc.id) {
+        fieldData.id = doc.id;
+      }
+      fields.push(fieldData);
+    });
+    
+    return fields;
+  } catch (error) {
+    console.error('Error fetching all fields:', error);
+    return [];
+  }
+};
+
+/**
+ * Fetch all users from Firebase Authentication and enrich with field data from Firestore
+ * @returns {Promise<{ uid: string, name: string, email: string, fields: Record<string, FieldData> }[]>}
+ */
+export const fetchAllUsersWithFirestoreFields = async () => {
+  try {
+    // Verify admin authentication
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      throw new Error('You must be logged in to access admin functions');
+    }
+
+    // First get all users from Realtime Database
+    const usersSnapshot = await get(child(ref(realtimeDb), 'users'));
+    const users = usersSnapshot.exists() ? usersSnapshot.val() : {};
+    
+    // Then get all fields from Firestore
+    // For security fallback, we'll use both methods to get fields
+
+    // 1. First try direct Firestore access
+    let fields: FieldData[] = [];
+    try {
+      fields = await fetchAllFields();
+    } catch (err) {
+      console.warn('Direct Firestore access failed, falling back to Realtime DB data', err);
+    }
+
+    // 2. If Firestore access fails or returns no fields, fallback to fields from Realtime DB
+    if (fields.length === 0) {
+      // Extract fields from user data if they exist
+      const fieldsFromUsers: FieldData[] = [];
+      Object.entries(users).forEach(([uid, userData]: [string, any]) => {
+        if (userData.fields) {
+          Object.entries(userData.fields).forEach(([fieldId, fieldData]: [string, any]) => {
+            fieldsFromUsers.push({
+              ...fieldData,
+              id: fieldId,
+              userId: uid
+            });
+          });
+        }
+      });
+      fields = fieldsFromUsers;
+    }
+    
+    // Group fields by user ID
+    const fieldsByUser: Record<string, Record<string, FieldData>> = {};
+    
+    fields.forEach(field => {
+      if (field.userId) {
+        if (!fieldsByUser[field.userId]) {
+          fieldsByUser[field.userId] = {};
+        }
+        fieldsByUser[field.userId][field.id] = field;
+      }
+    });
+    
+    // Combine user data with their fields
+    const result: Record<string, any> = {};
+    
+    Object.entries(users).forEach(([uid, userData]: [string, any]) => {
+      result[uid] = {
+        ...userData,
+        fields: fieldsByUser[uid] || {}
+      };
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('Error fetching users with Firestore fields:', error);
     return {};
   }
 };

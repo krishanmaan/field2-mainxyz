@@ -1,24 +1,48 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow users to read and write to the fields collection if they're authenticated
+    // Function to check if the user is an admin
+    function isAdmin() {
+      return request.auth != null && 
+        (request.auth.uid == "G2bsEFdqVdpdTXa1ayBFYDwBT0e23" || 
+         request.auth.token.admin == true);
+    }
+
+    // Allow users to read their own fields
     match /fields/{document=**} {
-      allow read, write: if request.auth != null;
+      allow read: if request.auth != null && 
+        (resource.data.userId == request.auth.uid || isAdmin());
+      allow write: if request.auth != null && 
+        (request.resource.data.userId == request.auth.uid || isAdmin());
     }
     
-    // Allow users to read and write to the distance_measurements collection if they're authenticated
+    // Allow users to read their own distance measurements
     match /distance_measurements/{document=**} {
-      allow read, write: if request.auth != null;
+      allow read: if request.auth != null && 
+        (resource.data.userId == request.auth.uid || isAdmin());
+      allow write: if request.auth != null && 
+        (request.resource.data.userId == request.auth.uid || isAdmin());
     }
     
-    // Allow users to read and write to the markers collection if they're authenticated
+    // Allow users to read their own markers
     match /markers/{document=**} {
-      allow read, write: if request.auth != null;
+      allow read: if request.auth != null && 
+        (resource.data.userId == request.auth.uid || isAdmin());
+      allow write: if request.auth != null && 
+        (request.resource.data.userId == request.auth.uid || isAdmin());
     }
     
-    // Allow users to read and write to the fieldOwnerDetails collection if they're authenticated
+    // Allow users to read their own field owner details
     match /fieldOwnerDetails/{document=**} {
-      allow read, write: if request.auth != null;
+      allow read: if request.auth != null && 
+        (resource.data.userId == request.auth.uid || isAdmin());
+      allow write: if request.auth != null && 
+        (request.resource.data.userId == request.auth.uid || isAdmin());
+    }
+    
+    // Admin access
+    match /{document=**} {
+      allow read: if isAdmin();
     }
   }
 }      
